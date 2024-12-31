@@ -21,12 +21,13 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"io/ioutil"
+	"os"
 	"reflect"
 	"sync"
-)
 
-import (
+	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
+
 	"github.com/dubbogo/grpc-go"
 	"github.com/dubbogo/grpc-go/codes"
 	"github.com/dubbogo/grpc-go/credentials"
@@ -38,13 +39,6 @@ import (
 	"github.com/dubbogo/grpc-go/encoding/tools"
 	"github.com/dubbogo/grpc-go/keepalive"
 	"github.com/dubbogo/grpc-go/status"
-
-	"github.com/opentracing/opentracing-go"
-
-	"github.com/pkg/errors"
-)
-
-import (
 	"github.com/dubbogo/triple/pkg/common"
 	"github.com/dubbogo/triple/pkg/common/constant"
 	"github.com/dubbogo/triple/pkg/config"
@@ -53,9 +47,9 @@ import (
 
 // TripleClient client endpoint that using triple protocol
 type TripleClient struct {
-	stubInvoker reflect.Value
+	stubInvokers []reflect.Value
 
-	triplConn *TripleConn
+	tripleConns []*TripleConn
 
 	//once is used when destroy
 	once sync.Once
@@ -65,6 +59,9 @@ type TripleClient struct {
 
 	// serializer is triple serializer to do codec
 	serializer encoding.Codec
+
+	// selector
+	selector common.Selector
 }
 
 // NewTripleClient creates triple client
@@ -123,10 +120,18 @@ func NewTripleClient(impl interface{}, opt *config.Option) (*TripleClient, error
 	// codec
 	if opt.CodecType == constant.PBCodecName {
 		// put dubbo3 network logic to tripleConn, creat pb stub invoker
-		tripleClient.stubInvoker = reflect.ValueOf(getInvoker(impl, newTripleConn(opt.Timeout, opt.Location, dialOpts...)))
+		for i := 0; i < opt.MaxConnNum; i++ {
+			tripleClient.stubInvokers = append(tripleClient.stubInvokers, reflect.ValueOf(getInvoker(impl, newTripleConn(opt.Timeout, opt.Location, dialOpts...))))
+		}
 	} else {
-		tripleClient.triplConn = newTripleConn(opt.Timeout, opt.Location, dialOpts...)
+		for i := 0; i < opt.MaxConnNum; i++ {
+			tripleClient.tripleConns = append(tripleClient.tripleConns, newTripleConn(opt.Timeout, opt.Location, dialOpts...))
+		}
 	}
+
+	// selector
+	tripleClient.selector = common.NewRoundRobinSelector()
+
 	return tripleClient, nil
 }
 
@@ -136,7 +141,7 @@ func (t *TripleClient) Invoke(methodName string, in []reflect.Value, reply inter
 		methodName, in, reply, t.opt.CodecType)
 	attachment := make(common.DubboAttachment)
 	if t.opt.CodecType == constant.PBCodecName {
-		method := t.stubInvoker.MethodByName(methodName)
+		method := t.getStubInvoker().MethodByName(methodName)
 		if method.IsZero() {
 			t.opt.Logger.Errorf("TripleClient.Invoke: methodName %s not impl in triple client api.", methodName)
 			return *common.NewErrorWithAttachment(status.Errorf(codes.Unimplemented, "TripleClient.Invoke: methodName %s not impl in triple client api.", methodName), attachment)
@@ -198,7 +203,7 @@ func (t *TripleClient) Invoke(methodName string, in []reflect.Value, reply inter
 				return *common.NewErrorWithAttachment(status.Errorf(codes.Unimplemented, "TripleClient.Invoke: serialization %s not impl in triple client api.", t.opt.CodecType), attachment)
 			}
 		}
-		return t.triplConn.Invoke(ctx, "/"+interfaceKey+"/"+methodName, reqParams, reply, grpc.ForceCodec(
+		return t.getTripleConn().Invoke(ctx, "/"+interfaceKey+"/"+methodName, reqParams, reply, grpc.ForceCodec(
 			encoding.NewPBWrapperTwoWayCodec(string(t.opt.CodecType), innerCodec, raw_proto.NewProtobufCodec())))
 	}
 	return *common.NewErrorWithAttachment(nil, attachment)
@@ -207,8 +212,15 @@ func (t *TripleClient) Invoke(methodName string, in []reflect.Value, reply inter
 // Close destroy http controller and return
 func (t *TripleClient) Close() {
 	t.opt.Logger.Debug("Triple Client Is closing")
-	if t.triplConn != nil && t.triplConn.grpcConn != nil {
-		t.triplConn.grpcConn.Close()
+	// if t.tripleConn != nil && t.tripleConn.grpcConn != nil {
+	// 	t.tripleConn.grpcConn.Close()
+	// }
+
+	// pool
+	for _, conn := range t.tripleConns {
+		if conn != nil && conn.grpcConn != nil {
+			conn.grpcConn.Close()
+		}
 	}
 }
 
@@ -229,7 +241,7 @@ func getClientTlsCertificate(opt *config.Option) (credentials.TransportCredentia
 
 	// need mTLS
 	ca := x509.NewCertPool()
-	caBytes, err := ioutil.ReadFile(opt.CACertFile)
+	caBytes, err := os.ReadFile(opt.CACertFile)
 	if err != nil {
 		return nil, err
 	}
@@ -246,4 +258,18 @@ func getClientTlsCertificate(opt *config.Option) (credentials.TransportCredentia
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      ca,
 	}), nil
+}
+
+func (t *TripleClient) getTripleConn() *TripleConn {
+	index := t.selector.Select(len(t.tripleConns))
+	tripleConn := t.tripleConns[index]
+	// TODO: check conn heath
+	return tripleConn
+}
+
+func (t *TripleClient) getStubInvoker() reflect.Value {
+	index := t.selector.Select(len(t.stubInvokers))
+	stubInvoker := t.stubInvokers[index]
+	// TODO: check stub heath
+	return stubInvoker
 }

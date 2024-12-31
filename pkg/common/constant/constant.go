@@ -106,6 +106,12 @@ const (
 	DefaultNumWorkers = 720
 )
 
+// pool
+const (
+	// DefaultMaxConnNum is the default max connection number of triple client
+	DefaultMaxConnNum = 20
+)
+
 // proxy interface
 const (
 	ProxyServiceKey = "github.com.dubbogo.triple.proxy"
