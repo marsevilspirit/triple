@@ -25,9 +25,6 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/opentracing/opentracing-go"
-	"github.com/pkg/errors"
-
 	"github.com/dubbogo/grpc-go"
 	"github.com/dubbogo/grpc-go/codes"
 	"github.com/dubbogo/grpc-go/credentials"
@@ -43,6 +40,10 @@ import (
 	"github.com/dubbogo/triple/pkg/common/constant"
 	"github.com/dubbogo/triple/pkg/config"
 	"github.com/dubbogo/triple/pkg/tracing"
+
+	"github.com/opentracing/opentracing-go"
+
+	"github.com/pkg/errors"
 )
 
 // TripleClient client endpoint that using triple protocol
