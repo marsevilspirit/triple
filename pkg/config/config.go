@@ -66,11 +66,14 @@ type Option struct {
 	// proxy mode for gateway
 	ProxyModeEnable bool
 
-	//tls
+	// tls
 	CACertFile    string
 	TLSCertFile   string
 	TLSKeyFile    string
 	TLSServerName string
+
+	// pool
+	MaxConnNum int
 }
 
 // Validate sets empty field to default config
@@ -101,6 +104,10 @@ func (o *Option) Validate() {
 
 	if o.NumWorkers <= 0 {
 		o.NumWorkers = constant.DefaultNumWorkers
+	}
+
+	if o.MaxConnNum <= 0 {
+		o.MaxConnNum = constant.DefaultMaxConnNum
 	}
 }
 
