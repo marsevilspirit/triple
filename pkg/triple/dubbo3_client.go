@@ -68,6 +68,8 @@ type TripleClient struct {
 
 	// selector
 	selector common.Selector
+
+	mu sync.Mutex
 }
 
 // NewTripleClient creates triple client
@@ -217,6 +219,9 @@ func (t *TripleClient) Invoke(methodName string, in []reflect.Value, reply inter
 
 // Close destroy http controller and return
 func (t *TripleClient) Close() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	t.opt.Logger.Debug("Triple Client Is closing")
 	// if t.tripleConn != nil && t.tripleConn.grpcConn != nil {
 	// 	t.tripleConn.grpcConn.Close()
@@ -267,6 +272,9 @@ func getClientTlsCertificate(opt *config.Option) (credentials.TransportCredentia
 }
 
 func (t *TripleClient) getTripleConn() *TripleConn {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	index := t.selector.Select(len(t.tripleConns))
 	tripleConn := t.tripleConns[index]
 	// TODO: check conn heath
@@ -274,6 +282,9 @@ func (t *TripleClient) getTripleConn() *TripleConn {
 }
 
 func (t *TripleClient) getStubInvoker() reflect.Value {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	index := t.selector.Select(len(t.stubInvokers))
 	stubInvoker := t.stubInvokers[index]
 	// TODO: check stub heath
