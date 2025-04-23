@@ -26,28 +26,24 @@ import (
 	"net"
 	"reflect"
 	"sync"
-)
 
-import (
 	hessian "github.com/apache/dubbo-go-hessian2"
-
 	"github.com/dubbogo/grpc-go"
 	"github.com/dubbogo/grpc-go/credentials"
 	"github.com/dubbogo/grpc-go/credentials/insecure"
 	"github.com/dubbogo/grpc-go/encoding"
+	"github.com/dubbogo/grpc-go/mem"
+
 	hessianGRPCCodec "github.com/dubbogo/grpc-go/encoding/hessian"
 	"github.com/dubbogo/grpc-go/encoding/msgpack"
 	"github.com/dubbogo/grpc-go/encoding/proto_wrapper_api"
 	"github.com/dubbogo/grpc-go/encoding/raw_proto"
 
-	perrors "github.com/pkg/errors"
-)
-
-import (
 	"github.com/dubbogo/triple/pkg/common"
 	"github.com/dubbogo/triple/pkg/common/constant"
 	"github.com/dubbogo/triple/pkg/config"
 	"github.com/dubbogo/triple/pkg/tracing"
+	perrors "github.com/pkg/errors"
 )
 
 // TripleServer is the object that can be started and listening remote request
@@ -135,11 +131,11 @@ func newGenericCodec() common.GenericCodec {
 
 // GenericCodec is pb impl of TwoWayCodec
 type GenericCodec struct {
-	codec encoding.Codec
+	codec encoding.CodecV2
 }
 
 // UnmarshalRequest unmarshal bytes @data to interface
-func (h *GenericCodec) UnmarshalRequest(data []byte) ([]interface{}, error) {
+func (h *GenericCodec) UnmarshalRequest(data mem.BufferSlice) ([]interface{}, error) {
 	wrapperRequest := proto_wrapper_api.TripleRequestWrapper{}
 	err := h.codec.Unmarshal(data, &wrapperRequest)
 	if err != nil {
@@ -168,12 +164,12 @@ func createGrpcDesc(serviceName string, service common.TripleUnaryService) *grpc
 				MethodName: "InvokeWithArgs",
 				Handler: func(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 					methodName := ctx.Value("XXX_TRIPLE_GO_METHOD_NAME").(string)
-					genericPayload, ok := ctx.Value("XXX_TRIPLE_GO_GENERIC_PAYLOAD").([]byte)
+					genericPayload, ok := ctx.Value("XXX_TRIPLE_GO_GENERIC_PAYLOAD").(mem.BufferSlice)
 					base := srv.(common.TripleUnaryService)
 					if methodName == "$invoke" && ok {
 						args, err := genericCodec.UnmarshalRequest(genericPayload)
 						if err != nil {
-							return nil, perrors.Errorf("unaryProcessor.processUnaryRPC: generic invoke with request %s unmarshal error = %s", string(genericPayload), err.Error())
+							return nil, perrors.Errorf("unaryProcessor.processUnaryRPC: generic invoke with request unmarshal error = %s", err.Error())
 						}
 						return base.InvokeWithArgs(ctx, methodName, args)
 					} else {
@@ -245,7 +241,7 @@ func newGrpcServerWithCodec(opt *config.Option) *grpc.Server {
 			fmt.Printf("TripleServer.Start: serialization %s not supported", opt.CodecType)
 		}
 	}
-	serverOpts = append(serverOpts, grpc.ForceServerCodec(encoding.NewPBWrapperTwoWayCodec(string(opt.CodecType), innerCodec, raw_proto.NewProtobufCodec())))
+	serverOpts = append(serverOpts, grpc.ForceServerCodecV2(encoding.NewPBWrapperTwoWayCodec(string(opt.CodecType), innerCodec, raw_proto.NewProtobufCodec())))
 
 	return grpc.NewServer(serverOpts...)
 }

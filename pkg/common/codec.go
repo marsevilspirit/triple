@@ -7,6 +7,7 @@ import (
 import (
 	"github.com/dubbogo/grpc-go/encoding"
 	"github.com/dubbogo/grpc-go/encoding/raw_proto"
+	"github.com/dubbogo/grpc-go/mem"
 
 	perrors "github.com/pkg/errors"
 )
@@ -27,7 +28,7 @@ var codecInWrapperSerializerTypeMap = make(map[string]string)
 
 // SetTripleCodec register CodecFactory @f and CodecType @codecType, with @opt[0].SerializerTypeInWrapper
 func SetTripleCodec(codecType constant.CodecType, f CodecFactory, opt ...*config.Option) {
-	encoding.RegisterCodec(encoding.NewPBWrapperTwoWayCodec(string(codecType), f(), raw_proto.NewProtobufCodec()))
+	encoding.RegisterCodecV2(encoding.NewPBWrapperTwoWayCodec(string(codecType), f(), raw_proto.NewProtobufCodec()))
 	codecFactoryMap[string(codecType)] = f
 	if len(opt) == 0 {
 		return
@@ -57,12 +58,12 @@ func GetCodecInWrapperName(name constant.CodecType) string {
 // TwoWayCodec is directly used by triple network logic
 // It can specify the marshal and unmarshal logic of req and rsp
 type TwoWayCodec interface {
-	MarshalRequest(interface{}) ([]byte, error)
-	MarshalResponse(interface{}) ([]byte, error)
-	UnmarshalRequest(data []byte, v interface{}) error
-	UnmarshalResponse(data []byte, v interface{}) error
+	MarshalRequest(any) (mem.BufferSlice, error)
+	MarshalResponse(any) (mem.BufferSlice, error)
+	UnmarshalRequest(data mem.BufferSlice, v any) error
+	UnmarshalResponse(data mem.BufferSlice, v any) error
 }
 
 type GenericCodec interface {
-	UnmarshalRequest(data []byte) ([]interface{}, error)
+	UnmarshalRequest(data mem.BufferSlice) ([]interface{}, error)
 }

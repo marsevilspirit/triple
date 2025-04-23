@@ -198,7 +198,7 @@ func (t *TripleClient) Invoke(methodName string, in []reflect.Value, reply inter
 				return *common.NewErrorWithAttachment(status.Errorf(codes.Unimplemented, "TripleClient.Invoke: serialization %s not impl in triple client api.", t.opt.CodecType), attachment)
 			}
 		}
-		return t.triplConn.Invoke(ctx, "/"+interfaceKey+"/"+methodName, reqParams, reply, grpc.ForceCodec(
+		return t.triplConn.Invoke(ctx, "/"+interfaceKey+"/"+methodName, reqParams, reply, grpc.ForceCodecV2(
 			encoding.NewPBWrapperTwoWayCodec(string(t.opt.CodecType), innerCodec, raw_proto.NewProtobufCodec())))
 	}
 	return *common.NewErrorWithAttachment(nil, attachment)
